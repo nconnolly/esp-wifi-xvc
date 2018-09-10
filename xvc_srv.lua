@@ -1,3 +1,5 @@
+
+node.setcpufreq(node.CPU160MHZ)
 -- a simple xvc server
 -- structure implementing the JTAG server
 -- For ISE server should be defined as:
@@ -34,39 +36,52 @@ end
 -- index i2 points to the begining of the TDI data
 -- len - defines number of bits to be shifted
 function pulse(i1,i2,len)
-  dout=""
-  obyte=0
-  mask=1
+  local dout=""
+  local obyte=0
+  local mask=1
   a=tmr.now()
+  local band = bit.band
+  local bor = bit.bor
+  local lshift = bit.lshift
+  local write = gpio.write
+  local read = gpio.read
+  local HIGH = gpio.HIGH
+  local LOW = gpio.LOW
+  local char = string.char
+  local wdclr = tmr.wdclr
+  local tbl = {}
+  local c = 1
   for i=1,len do
-    if bit.band(buf_in:byte(i2),mask)~=0 then
-       gpio.write(TDI,gpio.HIGH)
+     if band(buf_in:byte(i2),mask)~=0 then
+       write(TDI,HIGH)
     else
-       gpio.write(TDI,gpio.LOW)
+       write(TDI,LOW)
     end
-    if bit.band(buf_in:byte(i1),mask)~=0 then
-       gpio.write(TMS,gpio.HIGH)
+    if band(buf_in:byte(i1),mask)~=0 then
+       write(TMS,HIGH)
     else
-       gpio.write(TMS,gpio.LOW)
+       write(TMS,LOW)
     end
-    if gpio.read(TDO)==1 then
-       obyte = bit.bor(obyte,mask)
+    if read(TDO)==1 then
+       obyte = bor(obyte,mask)
     end
-    gpio.write(TCK,gpio.HIGH)
-    mask = bit.lshift(mask,1)
+    write(TCK,HIGH)
+    mask = lshift(mask,1)
     if mask==256 then
       i1 = i1 + 1
       i2 = i2 + 1
       mask = 1
-      dout = dout .. string.char(obyte)
+      tbl[c] = char(obyte)
+      c = c + 1
       obyte = 0
-      tmr.wdclr()
+      wdclr()
     end
-    gpio.write(TCK,gpio.LOW)
+    write(TCK,LOW)
   end
   -- Add the last, uncompleted byte to the output data
+  dout = table.concat(tbl)
   if mask ~= 1 then
-    dout = dout .. string.char(obyte)
+    dout = dout .. char(obyte)
   end
   b=tmr.now()
   print("time="..tostring(b-a))
@@ -87,7 +102,7 @@ function jtag_feed(c,new_data)
     return true
   elseif buf_in:sub(1,7)=="settck:" then
     -- Service settck command
-	   print("received settck\n")
+       print("received settck\n")
         if buf_in:len() >= 11 then
        -- Currently we simply claim, that we have set the clock
        -- period, even though it doesn't work!
@@ -99,8 +114,8 @@ function jtag_feed(c,new_data)
        -- Read the TCK period
        -- Program the new clock frequency
        -- Prepare and send the answer
-	   -- Remove the command from the buffer
-	   buf_in = buf_in:sub(12,-1)
+       -- Remove the command from the buffer
+       buf_in = buf_in:sub(12,-1)
     end
     return true
   elseif buf_in:sub(1,6)=="shift:" then
